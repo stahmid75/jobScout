@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Search Dashboard</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --line: #d9dde3;
+    --header: #e9edf2;
+    --header-hover: #dfe5eb;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --danger-bg: #fff1f2;
+    --danger: #b42318;
+    --edited-bg: #fff8db;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 20px;
+    font-family: Arial, Helvetica, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  h1 { margin: 0 0 6px; font-size: 24px; }
+  .sub { margin: 0 0 16px; color: var(--muted); }
+
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+
+  input[type="file"], input[type="text"], select, button {
+    min-height: 38px;
+    padding: 8px 10px;
+    font-size: 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: white;
+  }
+
+  input[type="text"] { width: min(340px, 100%); }
+
+  button {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  button:hover { background: #f2f4f7; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .danger-button { color: var(--danger); }
+
+  .summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 8px 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .help {
+    margin: 8px 0 12px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    max-height: 72vh;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+  }
+
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--header);
+    border-bottom: 1px solid var(--line);
+    padding: 9px 8px;
+    text-align: left;
+    white-space: nowrap;
+    user-select: none;
+  }
+
+  th.sortable { cursor: pointer; }
+  th.sortable:hover { background: var(--header-hover); }
+
+  td {
+    border-bottom: 1px solid #eceff3;
+    padding: 7px 8px;
+    vertical-align: top;
+    min-width: 90px;
+  }
+
+  td[contenteditable="true"] {
+    outline: none;
+    cursor: text;
+  }
+
+  td[contenteditable="true"]:focus {
+    box-shadow: inset 0 0 0 2px #8ab4f8;
+    background: white;
+  }
+
+  td.edited { background: var(--edited-bg); }
+
+  tr.removed td {
+    background: var(--danger-bg);
+    opacity: .72;
+    text-decoration: line-through;
+  }
+
+  tr.removed td.control-cell,
+  tr.removed td.link-cell {
+    text-decoration: none;
+  }
+
+  .control-cell {
+    min-width: 82px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .remove-check {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+
+  a {
+    color: #1769aa;
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  a:hover { text-decoration: underline; }
+
+  .sort-arrow {
+    margin-left: 5px;
+    font-size: 10px;
+  }
+
+  @media (max-width: 700px) {
+    body { padding: 12px; }
+    .controls > * { flex: 1 1 100%; width: 100%; }
+    .table-wrap { max-height: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Job Search Dashboard</h1>
+<p class="sub">Automatically loads <strong>jobs_raw.md</strong> and <strong>meta.md</strong> from the same folder. Manual file selection remains available as a fallback.</p>
+<p id="autoLoadStatus" class="help" style="margin-top:-8px;">Loading local files...</p>
+
+<div class="controls">
+  <input type="file" id="fileInput" accept=".md,.txt,text/markdown,text/plain" title="Load jobs_raw.md">
+  <input type="file" id="metaInput" accept=".md,.txt,text/markdown,text/plain" title="Load meta.md">
+
+  <input type="text" id="searchInput" placeholder="Search jobs..." disabled>
+
+  <select id="positionFilter" disabled>
+    <option value="">All Positions</option>
+    <option value="Faculty">Faculty</option>
+    <option value="Postdoc">Postdoc</option>
+    <option value="Other">Other</option>
+    <option value="Preferred">Preferred</option>
+    <option value="Applied">Applied</option>
+  </select>
+
+  <select id="fieldFilter" disabled>
+    <option value="">All Fields</option>
+  </select>
+
+  <select id="stateFilter" disabled>
+    <option value="">All States</option>
+  </select>
+
+  <label>
+    <input type="checkbox" id="showRemoved" checked disabled>
+    Show marked-for-removal
+  </label>
+
+  <button id="resetFilters" disabled>Reset filters/sort</button>
+  <button id="unmarkAll" class="danger-button" disabled>Unmark all removals</button>
+  <button id="deleteMarked" class="danger-button" disabled>Delete Marked</button>
+  <button id="syncButton" disabled style="font-size:16px;padding:10px 18px;border:2px solid #1769aa;">Sync / Save meta.md</button>
+  <button id="exportButton" disabled>Export Updated Jobs .md</button>
+</div>
+
+<div class="summary">
+  <span id="shownCount">0 shown</span>
+  <span id="totalCount">0 total</span>
+  <span id="removedCount">0 marked for removal</span>
+  <span id="preferredCount">0 preferred</span>
+  <span id="appliedCount">0 applied</span>
+  <span id="editedCount">0 edited rows</span>
+  <span id="syncStatus" style="color:#b54708;">No meta loaded</span>
+</div>
+
+<div class="help">
+  <strong>Location</strong> is simplified to state only. <strong>Preferred</strong>, <strong>Applied</strong>, and <strong>Note</strong> are kept in memory until you click <strong>Sync / Save meta.md</strong>. The portable meta file is matched back to jobs primarily by Job ID.
+  Click a column header to sort. Edit regular cells directly. Check <strong>Remove</strong> to exclude a job from export.
+  <strong>Job Alert Name</strong> is always the final column.
+</div>
+
+<div class="table-wrap">
+  <table id="jobTable">
+    <thead><tr id="headerRow"></tr></thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<script>
+(() => {
+  const autoLoadStatus = document.getElementById("autoLoadStatus");
+  const fileInput = document.getElementById("fileInput");
+  const metaInput = document.getElementById("metaInput");
+  const searchInput = document.getElementById("searchInput");
+  const positionFilter = document.getElementById("positionFilter");
+  const fieldFilter = document.getElementById("fieldFilter");
+  const stateFilter = document.getElementById("stateFilter");
+  const showRemoved = document.getElementById("showRemoved");
+  const resetFilters = document.getElementById("resetFilters");
+  const unmarkAll = document.getElementById("unmarkAll");
+  const deleteMarked = document.getElementById("deleteMarked");
+  const syncButton = document.getElementById("syncButton");
+  const exportButton = document.getElementById("exportButton");
+  const headerRow = document.getElementById("headerRow");
+  const tableBody = document.getElementById("tableBody");
+  const shownCount = document.getElementById("shownCount");
+  const totalCount = document.getElementById("totalCount");
+  const removedCount = document.getElementById("removedCount");
+  const preferredCount = document.getElementById("preferredCount");
+  const appliedCount = document.getElementById("appliedCount");
+  const editedCount = document.getElementById("editedCount");
+  const syncStatus = document.getElementById("syncStatus");
+
+  let rows = [];
+  let originalHeaders = [];
+  let displayHeaders = [];
+  let prefixText = "# Jobs raw\n\n";
+  let sourceFilename = "jobs_raw.md";
+  let sortColumn = null;
+  let sortDirection = 1;
+  let nextInternalId = 1;
+  let metaRecords = [];
+  let metaFilename = "meta.md";
+  let metaDirty = false;
+
+  function splitMarkdownRow(line) {
+    let s = line.trim();
+    if (s.startsWith("|")) s = s.slice(1);
+    if (s.endsWith("|")) s = s.slice(0, -1);
+
+    const cells = [];
+    let current = "";
+    let escaped = false;
+
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (escaped) {
+        current += ch;
+        escaped = false;
+      } else if (ch === "\\") {
+        current += ch;
+        escaped = true;
+      } else if (ch === "|") {
+        cells.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+
+    cells.push(current.trim());
+    return cells;
+  }
+
+  function isSeparatorLine(line) {
+    const cells = splitMarkdownRow(line);
+    return cells.length > 0 &&
+      cells.every(cell => /^:?-{3,}:?$/.test(cell.replace(/\s/g, "")));
+  }
+
+  function decodeEntities(text) {
+    const ta = document.createElement("textarea");
+    ta.innerHTML = text;
+    return ta.value;
+  }
+
+  function simplifyLocation(location) {
+    const value = String(location || "").trim();
+
+    if (!value || value === "—") return "—";
+
+    if (/online|remote/i.test(value)) return "Remote";
+
+    // US state abbreviation at end, e.g. "Pittsburgh, PA"
+    const stateMatch = value.match(/,\s*([A-Z]{2})\s*$/);
+    if (stateMatch) return stateMatch[1];
+
+    // If already just a state abbreviation.
+    if (/^[A-Z]{2}$/.test(value)) return value;
+
+    // For non-US locations keep only the final geographic component,
+    // usually the country (e.g. "Victoria, BC, Canada" -> "Canada").
+    if (value.includes(",")) {
+      const parts = value.split(",").map(x => x.trim()).filter(Boolean);
+      return parts[parts.length - 1] || value;
+    }
+
+    return value;
+  }
+
+  function classifyPosition(title) {
+    const t = String(title || "").toLowerCase();
+
+    const postdocPatterns = [
+      "postdoctoral",
+      "post-doctoral",
+      "post doctoral",
+      "postdoc",
+      "post-doc",
+      "post doc"
+    ];
+
+    if (postdocPatterns.some(p => t.includes(p))) {
+      return "Postdoc";
+    }
+
+    const facultyPatterns = [
+      "assistant professor",
+      "associate professor",
+      "full professor",
+      "professor",
+      "faculty",
+      "lecturer",
+      "instructor",
+      "teaching professor",
+      "professor of practice",
+      "clinical professor",
+      "research professor"
+    ];
+
+    if (facultyPatterns.some(p => t.includes(p))) {
+      return "Faculty";
+    }
+
+    return "Other";
+  }
+
+
+  function stableJobKey(row) {
+    const jobId = String(row.data["Job ID"] || "").trim();
+    if (jobId && jobId !== "—") return "id:" + jobId;
+
+    const link = String(row.data["Link"] || "").trim();
+    if (link && link !== "—") return "link:" + link;
+
+    return "fallback:" + [
+      row.data["University"] || "",
+      row.data["Job Title"] || ""
+    ].join("::").toLowerCase();
+  }
+
+  function parseMetaMarkdown(text) {
+    const lines = text.split(/\r?\n/);
+    let headerIndex = -1;
+
+    for (let i = 0; i < lines.length - 1; i++) {
+      if (lines[i].trim().startsWith("|") && isSeparatorLine(lines[i + 1])) {
+        const candidate = splitMarkdownRow(lines[i]);
+        if (candidate.includes("Preferred") || candidate.includes("Applied") || candidate.includes("Note")) {
+          headerIndex = i;
+          break;
+        }
+      }
+    }
+
+    if (headerIndex < 0) {
+      throw new Error("meta.md does not contain a recognized metadata table.");
+    }
+
+    const headers = splitMarkdownRow(lines[headerIndex]);
+    const records = [];
+
+    for (let i = headerIndex + 2; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith("|")) continue;
+
+      const values = splitMarkdownRow(line);
+      if (values.length !== headers.length) continue;
+
+      const rec = {};
+      headers.forEach((h, idx) => rec[h] = decodeEntities(values[idx]));
+      records.push(rec);
+    }
+
+    return records;
+  }
+
+  function applyMetaRecords() {
+    if (!rows.length || !metaRecords.length) return;
+
+    const byJobId = new Map();
+    const byLink = new Map();
+
+    metaRecords.forEach(rec => {
+      const jobId = String(rec["Job ID"] || "").trim();
+      const link = String(rec["Link"] || "").trim();
+
+      if (jobId && jobId !== "—") byJobId.set(jobId, rec);
+      if (link && link !== "—") byLink.set(link, rec);
+    });
+
+    rows.forEach(row => {
+      const jobId = String(row.data["Job ID"] || "").trim();
+      const link = String(row.data["Link"] || "").trim();
+
+      let rec = null;
+      if (jobId && byJobId.has(jobId)) rec = byJobId.get(jobId);
+      else if (link && byLink.has(link)) rec = byLink.get(link);
+
+      if (!rec) return;
+
+      row.preferred = /^(yes|true|1|x)$/i.test(String(rec["Preferred"] || "").trim());
+      row.applied = /^(yes|true|1|x)$/i.test(String(rec["Applied"] || "").trim());
+
+      const note = String(rec["Note"] || "").trim();
+      row.note = note === "—" ? "" : note;
+    });
+  }
+
+  function markMetaDirty() {
+    metaDirty = true;
+    syncStatus.textContent = "Unsynced meta changes";
+    syncStatus.style.color = "#b54708";
+  }
+
+  function markMetaSynced(message = "meta.md synced") {
+    metaDirty = false;
+    syncStatus.textContent = message;
+    syncStatus.style.color = "#027a48";
+  }
+
+  function exportMeta() {
+    const lines = [
+      "# Job dashboard metadata",
+      "",
+      "| Job ID | Link | Preferred | Applied | Note |",
+      "| --- | --- | --- | --- | --- |"
+    ];
+
+    // Include rows that contain manual metadata. This keeps meta.md compact.
+    rows.forEach(row => {
+      const hasMeta = row.preferred || row.applied || String(row.note || "").trim();
+      if (!hasMeta) return;
+
+      lines.push("| " + [
+        encodeMarkdownCell(row.data["Job ID"] || "—"),
+        encodeMarkdownCell(row.data["Link"] || "—"),
+        row.preferred ? "Yes" : "—",
+        row.applied ? "Yes" : "—",
+        row.note ? encodeMarkdownCell(row.note) : "—"
+      ].join(" | ") + " |");
+    });
+
+    const blob = new Blob([lines.join("\n") + "\n"], {
+      type: "text/markdown;charset=utf-8"
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "meta.md";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    markMetaSynced("meta.md saved");
+  }
+
+  function parseMarkdown(text) {
+    const lines = text.split(/\r?\n/);
+    let headerIndex = -1;
+
+    for (let i = 0; i < lines.length - 1; i++) {
+      if (lines[i].trim().startsWith("|") && isSeparatorLine(lines[i + 1])) {
+        headerIndex = i;
+        break;
+      }
+    }
+
+    if (headerIndex < 0) {
+      throw new Error("No Markdown table was found.");
+    }
+
+    prefixText = lines.slice(0, headerIndex).join("\n").trimEnd();
+    if (prefixText) prefixText += "\n\n";
+    else prefixText = "# Jobs raw\n\n";
+
+    originalHeaders = splitMarkdownRow(lines[headerIndex]);
+
+    displayHeaders = originalHeaders.filter(
+      h => h !== "Job Alert Name" && h !== "Preferred" && h !== "Applied" && h !== "Note"
+    );
+    if (originalHeaders.includes("Job Alert Name")) {
+      displayHeaders.push("Job Alert Name");
+    }
+
+    const parsed = [];
+
+    for (let i = headerIndex + 2; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith("|")) continue;
+
+      const values = splitMarkdownRow(line);
+      if (values.length !== originalHeaders.length) continue;
+
+      const data = {};
+      originalHeaders.forEach((header, idx) => {
+        data[header] = decodeEntities(values[idx]);
+      });
+
+      // Simplify location immediately so display and export match.
+      if (Object.prototype.hasOwnProperty.call(data, "Location")) {
+        data["Location"] = simplifyLocation(data["Location"]);
+      }
+
+      const row = {
+        id: nextInternalId++,
+        data,
+        removed: false,
+        edited: false,
+        preferred: false,
+        applied: false,
+        note: ""
+      };
+
+      parsed.push(row);
+    }
+
+    return parsed;
+  }
+
+  function encodeMarkdownCell(value) {
+    return String(value ?? "")
+      .replace(/\r?\n/g, " ")
+      .replace(/\\/g, "\\\\")
+      .replace(/\|/g, "\\|")
+      .trim() || "—";
+  }
+
+  function buildHeader() {
+    headerRow.innerHTML = "";
+
+    const removeTh = document.createElement("th");
+    removeTh.textContent = "Remove";
+    headerRow.appendChild(removeTh);
+
+    const preferredTh = document.createElement("th");
+    preferredTh.textContent = "Preferred";
+    headerRow.appendChild(preferredTh);
+
+    const appliedTh = document.createElement("th");
+    appliedTh.textContent = "Applied";
+    headerRow.appendChild(appliedTh);
+
+    displayHeaders.forEach(header => {
+      if (header === "Job Alert Name") {
+        const noteTh = document.createElement("th");
+        noteTh.textContent = "Note";
+        headerRow.appendChild(noteTh);
+      }
+
+      const th = document.createElement("th");
+      th.className = "sortable";
+      th.dataset.header = header;
+      th.textContent = header;
+
+      const arrow = document.createElement("span");
+      arrow.className = "sort-arrow";
+      th.appendChild(arrow);
+
+      th.addEventListener("click", () => {
+        if (sortColumn === header) {
+          sortDirection *= -1;
+        } else {
+          sortColumn = header;
+          sortDirection = 1;
+        }
+        render();
+      });
+
+      headerRow.appendChild(th);
+    });
+
+    if (!displayHeaders.includes("Job Alert Name")) {
+      const noteTh = document.createElement("th");
+      noteTh.textContent = "Note";
+      headerRow.appendChild(noteTh);
+    }
+  }
+
+  function populateFilter(select, column, defaultLabel) {
+    const current = select.value;
+    select.innerHTML = "";
+
+    const first = document.createElement("option");
+    first.value = "";
+    first.textContent = defaultLabel;
+    select.appendChild(first);
+
+    const values = [...new Set(
+      rows
+        .map(row => String(row.data[column] || "").trim())
+        .filter(value => value && value !== "—")
+    )].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+
+    values.forEach(value => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+
+    if (values.includes(current)) {
+      select.value = current;
+    }
+  }
+
+  function buildFilters() {
+    populateFilter(fieldFilter, "Fields for Hiring", "All Fields");
+    populateFilter(stateFilter, "Location", "All States");
+  }
+
+  function postingAge(value) {
+    const s = String(value || "").trim().toLowerCase();
+
+    if (!s || s === "—") return Number.POSITIVE_INFINITY;
+    if (s === "today") return 0;
+    if (s === "yesterday") return 1;
+
+    let match = s.match(/(\d+)\s+hour/);
+    if (match) return Number(match[1]) / 24;
+
+    match = s.match(/(\d+)\s+day/);
+    if (match) return Number(match[1]);
+
+    const parsedDate = Date.parse(s);
+    if (!Number.isNaN(parsedDate)) return -parsedDate;
+
+    return Number.POSITIVE_INFINITY;
+  }
+
+  function sortValue(row, column) {
+    const value = row.data[column] ?? "";
+
+    if (column === "Job Posted Date") {
+      return postingAge(value);
+    }
+
+    if (column === "No.") {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+    }
+
+    return String(value);
+  }
+
+  function getVisibleRows() {
+    const search = searchInput.value.trim().toLowerCase();
+    const position = positionFilter.value;
+    const field = fieldFilter.value;
+    const state = stateFilter.value;
+    const includeRemoved = showRemoved.checked;
+
+    let visible = rows.filter(row => {
+      if (!includeRemoved && row.removed) return false;
+
+      if (position) {
+        if (position === "Preferred") {
+          if (!row.preferred) return false;
+        } else if (position === "Applied") {
+          if (!row.applied) return false;
+        } else if (classifyPosition(row.data["Job Title"]) !== position) {
+          return false;
+        }
+      }
+
+      if (field &&
+          String(row.data["Fields for Hiring"] || "") !== field) {
+        return false;
+      }
+
+      if (state &&
+          String(row.data["Location"] || "") !== state) {
+        return false;
+      }
+
+      if (search) {
+        const text = (
+          displayHeaders.map(header => row.data[header] || "").join(" ") +
+          " " + (row.note || "")
+        ).toLowerCase();
+
+        if (!text.includes(search)) return false;
+      }
+
+      return true;
+    });
+
+    if (sortColumn) {
+      visible = [...visible].sort((a, b) => {
+        const A = sortValue(a, sortColumn);
+        const B = sortValue(b, sortColumn);
+
+        if (typeof A === "number" && typeof B === "number") {
+          if (A === B) return a.id - b.id;
+          return (A - B) * sortDirection;
+        }
+
+        const comparison = String(A).localeCompare(
+          String(B),
+          undefined,
+          { numeric: true, sensitivity: "base" }
+        );
+
+        return (comparison || (a.id - b.id)) * sortDirection;
+      });
+    }
+
+    return visible;
+  }
+
+  function updateSortArrows() {
+    headerRow.querySelectorAll("th.sortable").forEach(th => {
+      const arrow = th.querySelector(".sort-arrow");
+
+      if (th.dataset.header === sortColumn) {
+        arrow.textContent = sortDirection === 1 ? " ▲" : " ▼";
+      } else {
+        arrow.textContent = "";
+      }
+    });
+  }
+
+  function updateCounts() {
+    const visible = getVisibleRows();
+    const removed = rows.filter(row => row.removed).length;
+    const preferred = rows.filter(row => row.preferred).length;
+    const applied = rows.filter(row => row.applied).length;
+    const edited = rows.filter(row => row.edited).length;
+
+    shownCount.textContent = `${visible.length} shown`;
+    totalCount.textContent = `${rows.length} total`;
+    removedCount.textContent = `${removed} marked for removal`;
+    preferredCount.textContent = `${preferred} preferred`;
+    appliedCount.textContent = `${applied} applied`;
+    editedCount.textContent = `${edited} edited rows`;
+  }
+
+  function render() {
+    updateSortArrows();
+    tableBody.innerHTML = "";
+
+    const visible = getVisibleRows();
+
+    visible.forEach(row => {
+      const tr = document.createElement("tr");
+
+      if (row.removed) {
+        tr.classList.add("removed");
+      }
+
+      const removeCell = document.createElement("td");
+      removeCell.className = "control-cell";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "remove-check";
+      checkbox.checked = row.removed;
+      checkbox.title = "Exclude this job from exported Markdown";
+
+      checkbox.addEventListener("change", () => {
+        row.removed = checkbox.checked;
+        render();
+      });
+
+      removeCell.appendChild(checkbox);
+      tr.appendChild(removeCell);
+
+      const preferredCell = document.createElement("td");
+      preferredCell.className = "control-cell";
+
+      const preferredCheck = document.createElement("input");
+      preferredCheck.type = "checkbox";
+      preferredCheck.className = "remove-check";
+      preferredCheck.checked = row.preferred;
+      preferredCheck.title = "Mark this job as preferred";
+      preferredCheck.addEventListener("change", () => {
+        row.preferred = preferredCheck.checked;
+        markMetaDirty();
+        if (positionFilter.value === "Preferred" && !row.preferred) render();
+        else updateCounts();
+      });
+
+      preferredCell.appendChild(preferredCheck);
+      tr.appendChild(preferredCell);
+
+      const appliedCell = document.createElement("td");
+      appliedCell.className = "control-cell";
+
+      const appliedCheck = document.createElement("input");
+      appliedCheck.type = "checkbox";
+      appliedCheck.className = "remove-check";
+      appliedCheck.checked = row.applied;
+      appliedCheck.title = "Mark this job as applied";
+      appliedCheck.addEventListener("change", () => {
+        row.applied = appliedCheck.checked;
+        markMetaDirty();
+        if (positionFilter.value === "Applied" && !row.applied) render();
+        else updateCounts();
+      });
+
+      appliedCell.appendChild(appliedCheck);
+      tr.appendChild(appliedCell);
+
+      displayHeaders.forEach(header => {
+        if (header === "Job Alert Name") {
+          const noteCell = document.createElement("td");
+          noteCell.style.minWidth = "220px";
+
+          const noteArea = document.createElement("textarea");
+          noteArea.value = row.note || "";
+          noteArea.placeholder = "Add note...";
+          noteArea.rows = 2;
+          noteArea.style.width = "100%";
+          noteArea.style.minWidth = "200px";
+          noteArea.style.resize = "vertical";
+          noteArea.style.font = "inherit";
+          noteArea.style.padding = "6px";
+          noteArea.style.border = "1px solid #d9dde3";
+          noteArea.style.borderRadius = "5px";
+
+          noteArea.addEventListener("input", () => {
+            row.note = noteArea.value;
+            markMetaDirty();
+          });
+
+          noteArea.addEventListener("blur", () => {
+            row.note = noteArea.value.trim();
+            noteArea.value = row.note;
+            markMetaDirty();
+          });
+
+          noteCell.appendChild(noteArea);
+          tr.appendChild(noteCell);
+        }
+
+        const td = document.createElement("td");
+        const raw = row.data[header] ?? "—";
+
+        if (header === "Link") {
+          td.className = "link-cell";
+
+          const link = document.createElement("a");
+          link.textContent = raw === "—" ? "—" : "Open Job";
+
+          if (raw !== "—") {
+            link.href = raw;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+          } else {
+            link.style.color = "#6b7280";
+          }
+
+          td.appendChild(link);
+
+          const editButton = document.createElement("button");
+          editButton.type = "button";
+          editButton.textContent = "Edit";
+          editButton.style.marginLeft = "7px";
+          editButton.style.padding = "2px 6px";
+          editButton.style.minHeight = "24px";
+          editButton.style.fontSize = "11px";
+
+          editButton.addEventListener("click", () => {
+            const value = prompt(
+              "Edit job link:",
+              row.data[header] || ""
+            );
+
+            if (value !== null) {
+              row.data[header] = value.trim() || "—";
+              row.edited = true;
+              render();
+            }
+          });
+
+          td.appendChild(editButton);
+        } else {
+          td.contentEditable = "true";
+          td.spellcheck = false;
+          td.textContent = raw;
+
+          if (row.edited) {
+            td.classList.add("edited");
+          }
+
+          td.addEventListener("blur", () => {
+            let newValue = td.textContent.trim() || "—";
+
+            if (header === "Location") {
+              newValue = simplifyLocation(newValue);
+              td.textContent = newValue;
+            }
+
+            if (newValue !== (row.data[header] ?? "—")) {
+              row.data[header] = newValue;
+              row.edited = true;
+              buildFilters();
+              updateCounts();
+              td.classList.add("edited");
+            }
+          });
+
+          td.addEventListener("keydown", event => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              td.blur();
+            }
+          });
+        }
+
+        tr.appendChild(td);
+      });
+
+      if (!displayHeaders.includes("Job Alert Name")) {
+        const noteCell = document.createElement("td");
+        noteCell.style.minWidth = "220px";
+
+        const noteArea = document.createElement("textarea");
+        noteArea.value = row.note || "";
+        noteArea.placeholder = "Add note...";
+        noteArea.rows = 2;
+        noteArea.style.width = "100%";
+        noteArea.style.minWidth = "200px";
+        noteArea.style.resize = "vertical";
+        noteArea.style.font = "inherit";
+        noteArea.style.padding = "6px";
+        noteArea.style.border = "1px solid #d9dde3";
+        noteArea.style.borderRadius = "5px";
+
+        noteArea.addEventListener("input", () => {
+          row.note = noteArea.value;
+          markMetaDirty();
+        });
+
+        noteArea.addEventListener("blur", () => {
+          row.note = noteArea.value.trim();
+          noteArea.value = row.note;
+          markMetaDirty();
+        });
+
+        noteCell.appendChild(noteArea);
+        tr.appendChild(noteCell);
+      }
+
+      tableBody.appendChild(tr);
+    });
+
+    updateCounts();
+  }
+
+  function enableControls(enabled) {
+    [
+      metaInput,
+      searchInput,
+      positionFilter,
+      fieldFilter,
+      stateFilter,
+      showRemoved,
+      resetFilters,
+      unmarkAll,
+      deleteMarked,
+      syncButton,
+      exportButton
+    ].forEach(control => {
+      control.disabled = !enabled;
+    });
+
+    fileInput.disabled = false;
+    metaInput.disabled = false;
+  }
+
+  function exportMarkdown() {
+    const keptRows = rows.filter(row => !row.removed);
+
+    const exportHeaders = originalHeaders.filter(
+      header => header !== "Job Alert Name" &&
+                header !== "Preferred" &&
+                header !== "Applied" &&
+                header !== "Note"
+    );
+
+    if (originalHeaders.includes("Job Alert Name")) {
+      exportHeaders.push("Job Alert Name");
+    }
+
+    const lines = [];
+    lines.push("| " + exportHeaders.join(" | ") + " |");
+    lines.push("| " + exportHeaders.map(() => "---").join(" | ") + " |");
+
+    keptRows.forEach(row => {
+      const values = exportHeaders.map(header => {
+        let value = row.data[header];
+
+        if (header === "Location") {
+          value = simplifyLocation(value);
+        }
+
+        return encodeMarkdownCell(value);
+      });
+
+      lines.push("| " + values.join(" | ") + " |");
+    });
+
+    const output = prefixText + lines.join("\n") + "\n";
+    const blob = new Blob([output], {
+      type: "text/markdown;charset=utf-8"
+    });
+
+    const base = sourceFilename.replace(/\.(md|txt)$/i, "");
+    const filename = `${base}_updated.md`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+
+
+  function loadJobsText(textContent, filename = "jobs_raw.md") {
+    sourceFilename = filename;
+    nextInternalId = 1;
+    rows = parseMarkdown(String(textContent || ""));
+
+    sortColumn = null;
+    sortDirection = 1;
+
+    searchInput.value = "";
+    positionFilter.value = "";
+    showRemoved.checked = true;
+
+    applyMetaRecords();
+    buildHeader();
+    buildFilters();
+    enableControls(true);
+    render();
+
+    if (metaRecords.length) {
+      markMetaSynced(`${metaFilename} loaded`);
+    } else {
+      metaDirty = false;
+      syncStatus.textContent = "No meta loaded";
+      syncStatus.style.color = "#667085";
+    }
+  }
+
+  async function autoLoadLocalFiles() {
+    autoLoadStatus.textContent = "Loading jobs_raw.md and meta.md...";
+
+    try {
+      const jobsResponse = await fetch("./jobs_raw.md", { cache: "no-store" });
+
+      if (!jobsResponse.ok) {
+        throw new Error(`jobs_raw.md returned ${jobsResponse.status}`);
+      }
+
+      const jobsText = await jobsResponse.text();
+
+      try {
+        const metaResponse = await fetch("./meta.md", { cache: "no-store" });
+
+        if (metaResponse.ok) {
+          const metaText = await metaResponse.text();
+          metaRecords = parseMetaMarkdown(metaText);
+          metaFilename = "meta.md";
+        } else {
+          metaRecords = [];
+        }
+      } catch {
+        metaRecords = [];
+      }
+
+      loadJobsText(jobsText, "jobs_raw.md");
+
+      autoLoadStatus.textContent =
+        metaRecords.length
+          ? "Loaded jobs_raw.md + meta.md automatically."
+          : "Loaded jobs_raw.md automatically. No meta.md found yet.";
+
+      autoLoadStatus.style.color = "#027a48";
+    } catch (error) {
+      autoLoadStatus.textContent =
+        "Automatic loading failed. Restart JobsDashboard.exe and confirm jobs_raw.md is beside it.";
+      autoLoadStatus.style.color = "#b42318";
+      console.warn("Automatic load failed:", error);
+    }
+  }
+
+  metaInput.addEventListener("change", event => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    metaFilename = file.name;
+    const reader = new FileReader();
+
+    reader.onload = e => {
+      try {
+        metaRecords = parseMetaMarkdown(String(e.target.result || ""));
+
+        if (rows.length) {
+          // Clear current manual meta state, then apply loaded meta.
+          rows.forEach(row => {
+            row.preferred = false;
+            row.applied = false;
+            row.note = "";
+          });
+
+          applyMetaRecords();
+          render();
+        }
+
+        markMetaSynced(`${metaFilename} loaded`);
+      } catch (error) {
+        alert(error.message || "Could not read meta.md.");
+      }
+    };
+
+    reader.onerror = () => {
+      alert("Could not read the selected meta file.");
+    };
+
+    reader.readAsText(file);
+  });
+
+  fileInput.addEventListener("change", event => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = e => {
+      try {
+        loadJobsText(String(e.target.result || ""), file.name);
+        autoLoadStatus.textContent = `Loaded ${file.name} manually.`;
+        autoLoadStatus.style.color = "#027a48";
+      } catch (error) {
+        rows = [];
+        headerRow.innerHTML = "";
+        tableBody.innerHTML = "";
+        enableControls(false);
+        updateCounts();
+        alert(error.message || "Could not read the Markdown file.");
+      }
+    };
+
+    reader.onerror = () => {
+      alert("Could not read the selected file.");
+    };
+
+    reader.readAsText(file);
+  });
+
+  searchInput.addEventListener("input", render);
+  positionFilter.addEventListener("change", render);
+  fieldFilter.addEventListener("change", render);
+  stateFilter.addEventListener("change", render);
+  showRemoved.addEventListener("change", render);
+
+  resetFilters.addEventListener("click", () => {
+    searchInput.value = "";
+    positionFilter.value = "";
+    fieldFilter.value = "";
+    stateFilter.value = "";
+    sortColumn = null;
+    sortDirection = 1;
+    render();
+  });
+
+  unmarkAll.addEventListener("click", () => {
+    rows.forEach(row => {
+      row.removed = false;
+    });
+    render();
+  });
+
+
+  deleteMarked.addEventListener("click", () => {
+    const markedCount = rows.filter(row => row.removed).length;
+
+    if (markedCount === 0) {
+      alert("No jobs are marked for removal.");
+      return;
+    }
+
+    const confirmed = confirm(
+      `Delete ${markedCount} marked job${markedCount === 1 ? "" : "s"} from the current table?`
+    );
+
+    if (!confirmed) return;
+
+    const deletingMeta = rows.some(
+      row => row.removed && (row.preferred || row.applied || String(row.note || "").trim())
+    );
+
+    rows = rows.filter(row => !row.removed);
+
+    if (deletingMeta) markMetaDirty();
+    buildFilters();
+    render();
+  });
+
+  syncButton.addEventListener("click", exportMeta);
+  exportButton.addEventListener("click", exportMarkdown);
+
+  window.addEventListener("beforeunload", event => {
+    if (!metaDirty) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
+  enableControls(false);
+  autoLoadLocalFiles();
+})();
+</script>
+
+</body>
+</html>
