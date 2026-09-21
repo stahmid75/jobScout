@@ -24,7 +24,7 @@ Replace-Once 'link.href = raw;' 'if (/^https?:\/\//i.test(raw)) link.href = raw;
 # Commit editable cells on input so typing is autosaved without requiring focus loss.
 Replace-Once 'td.addEventListener("blur", () => {' 'td.addEventListener("input", () => { row.data[header] = td.textContent; row.edited = true; queueSave(); }); td.addEventListener("blur", () => { buildFilters(); updateCounts();'
 [IO.File]::WriteAllText($generatedDashboard,$h,[Text.UTF8Encoding]::new($false))
-& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /out:..\JobsDashboard.exe /resource:dashboard.generated.html,dashboard.html /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll JobsDashboard.cs
+& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /out:..\JobScout.exe /resource:dashboard.generated.html,dashboard.html /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll JobScout.cs Importer.cs
 if($LASTEXITCODE -ne 0){throw 'Compilation failed'}
 
 } finally {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Job Search Dashboard</title>
+<title>JobScout</title>
 <style>
   :root {
     --bg: #f6f7f9;
@@ -74,6 +74,21 @@
     color: var(--muted);
     font-size: 13px;
   }
+
+  .import-log {
+    margin-top: 12px;
+    background: #101828;
+    color: #e5e7eb;
+    border: 1px solid #344054;
+    border-radius: 7px;
+    padding: 10px;
+    max-height: 160px;
+    overflow-y: auto;
+    font: 12px Consolas, "Courier New", monospace;
+    white-space: pre-wrap;
+  }
+
+  .import-log:empty { display: none; }
 
   .table-wrap {
     overflow-x: auto;
@@ -162,13 +177,28 @@
   @media (max-width: 700px) {
     body { padding: 12px; }
     .controls > * { flex: 1 1 100%; width: 100%; }
-    .table-wrap { max-height: none; }
+    .import-log {
+    margin-top: 12px;
+    background: #101828;
+    color: #e5e7eb;
+    border: 1px solid #344054;
+    border-radius: 7px;
+    padding: 10px;
+    max-height: 160px;
+    overflow-y: auto;
+    font: 12px Consolas, "Courier New", monospace;
+    white-space: pre-wrap;
+  }
+
+  .import-log:empty { display: none; }
+
+  .table-wrap { max-height: none; }
   }
 </style>
 </head>
 <body>
 
-<h1>Job Search Dashboard</h1>
+<h1>JobScout</h1>
 <p class="sub">Automatically loads <strong>jobs_raw.md</strong> and <strong>meta.md</strong> from the same folder. Manual file selection remains available as a fallback.</p>
 <p id="autoLoadStatus" class="help" style="margin-top:-8px;">Loading local files...</p>
 
@@ -205,6 +235,7 @@
   <button id="deleteMarked" class="danger-button" disabled>Delete Marked</button>
   <button id="syncButton" disabled style="font-size:16px;padding:10px 18px;border:2px solid #1769aa;">Sync / Save meta.md</button>
   <button id="exportButton" disabled>Export Updated Jobs .md</button>
+  <button id="importButton" disabled>Import New Jobs</button>
 </div>
 
 <div class="summary">
@@ -230,6 +261,8 @@
   </table>
 </div>
 
+<div id="importLog" class="import-log" aria-live="polite"></div>
+
 <script>
 (() => {
   const autoLoadStatus = document.getElementById("autoLoadStatus");
@@ -245,6 +278,8 @@
   const deleteMarked = document.getElementById("deleteMarked");
   const syncButton = document.getElementById("syncButton");
   const exportButton = document.getElementById("exportButton");
+  const importButton = document.getElementById("importButton");
+  const importLog = document.getElementById("importLog");
   const headerRow = document.getElementById("headerRow");
   const tableBody = document.getElementById("tableBody");
   const shownCount = document.getElementById("shownCount");
@@ -266,6 +301,12 @@
   let metaRecords = [];
   let metaFilename = "meta.md";
   let metaDirty = false;
+
+  function appendImportLog(message) {
+    const stamp = new Date().toLocaleTimeString();
+    importLog.textContent += `[${stamp}] ${message}\n`;
+    importLog.scrollTop = importLog.scrollHeight;
+  }
 
   function splitMarkdownRow(line) {
     let s = line.trim();
@@ -1008,7 +1049,8 @@
       unmarkAll,
       deleteMarked,
       syncButton,
-      exportButton
+      exportButton,
+      importButton
     ].forEach(control => {
       control.disabled = !enabled;
     });
@@ -1134,7 +1176,7 @@
       autoLoadStatus.style.color = "#027a48";
     } catch (error) {
       autoLoadStatus.textContent =
-        "Automatic loading failed. Restart JobsDashboard.exe and confirm jobs_raw.md is beside it.";
+        "Automatic loading failed. Restart JobScout.exe and confirm jobs_raw.md is beside it.";
       autoLoadStatus.style.color = "#b42318";
       console.warn("Automatic load failed:", error);
     }
@@ -1256,6 +1298,61 @@
   syncButton.addEventListener("click", exportMeta);
   exportButton.addEventListener("click", exportMarkdown);
 
+  importButton.addEventListener("click", async () => {
+    if (metaDirty && typeof saveLocal === "function") {
+      await saveLocal();
+      if (metaDirty) {
+        alert("Import paused because meta.md could not be saved. Use Save now / Retry, then import again.");
+        return;
+      }
+    }
+
+    importButton.disabled = true;
+    importLog.textContent = "";
+    importLog.dataset.lastLine = "";
+    appendImportLog("Starting HigherEdJobs import...");
+
+    let pollTimer = null;
+    const pollStatus = async () => {
+      try {
+        const statusResponse = await fetch("api/import-status", { cache: "no-store" });
+        if (!statusResponse.ok) return;
+        const status = await statusResponse.json();
+        const total = Number(status.total || 0);
+        const current = Number(status.current || 0);
+        const prefix = total ? `${status.phase}: ${current} of ${total}` : status.phase;
+        const line = `${prefix} · ${status.added || 0} added, ${status.skipped || 0} skipped, ${status.failed || 0} failed · ${status.message || ""}`;
+        if (importLog.dataset.lastLine !== line) {
+          importLog.dataset.lastLine = line;
+          appendImportLog(line);
+        }
+      } catch {}
+    };
+
+    try {
+      pollTimer = setInterval(pollStatus, 1000);
+      const response = await fetch("api/import", {
+        method: "POST",
+        headers: { "X-Jobs-Token": appToken }
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const result = await response.json();
+      const failures = result.failures && result.failures.length
+        ? " Failed examples: " + result.failures.join("; ")
+        : "";
+      appendImportLog(`Import complete: ${result.added} added, ${result.skipped} skipped as duplicates, ${result.failed} failed.${failures} Reloading...`);
+      setTimeout(() => location.reload(), 1200);
+    } catch (error) {
+      appendImportLog("Import failed: " + (error.message || error));
+      importButton.disabled = false;
+    } finally {
+      if (pollTimer) clearInterval(pollTimer);
+    }
+  });
   window.addEventListener("beforeunload", event => {
     if (!metaDirty) return;
     event.preventDefault();

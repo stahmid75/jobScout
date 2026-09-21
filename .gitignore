@@ -1,0 +1,7 @@
+.chrome-import-profile/
+import-settings.json
+meta.md
+meta.md.bak
+*.tmp
+jobs_raw.damaged-import-test.md
+jobs_raw.test-backup-*.md
