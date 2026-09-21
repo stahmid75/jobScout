@@ -1,21 +1,16 @@
 # JobScout
 
-JobScout is a Windows desktop dashboard for reviewing academic job postings. It can import new jobs from HigherEdJobs alerts, use local Ollama to extract structured job details, and keep your notes/status in local metadata.
+JobScout is an AI integrated Windows desktop dashboard for reviewing academic job postings. It can import new jobs from HigherEdJobs alerts, use local LLM to extract structured job details, and keep your notes/status in local metadata.
 
 ## Prerequisites
 
 - Windows with Google Chrome installed.
 - Ollama installed and running.
-- At least one Ollama model. JobScout will use `llama3.2:3b` when available, or choose another installed model automatically.
+- An Ollama model, for example `llama3.2:3b`.
 
-Install Ollama from [ollama.com](https://ollama.com/download), then open PowerShell and run:
-
-```powershell
-ollama pull llama3.2:3b
-ollama serve
-```
-
-If Ollama is already running, `ollama serve` may say the port is in use. That is okay.
+## Ollama set up (if not present already)
+--Install Ollama from [ollama.com](https://ollama.com/download)
+-- open powershell and run 'ollama run llama3.2:3b'
 
 ## Use
 
