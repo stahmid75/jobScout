@@ -1,3 +1,4 @@
+param([string]$OutputPath = "..\JobScout.exe")
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
@@ -19,12 +20,11 @@ Replace-Once 'syncButton.addEventListener("click", exportMeta);' 'syncButton.add
 Replace-Once 'Sync / Save meta.md' 'Save now / Retry'
 Replace-Once 'Automatically loads <strong>jobs_raw.md</strong> and <strong>meta.md</strong> from the same folder. Manual file selection remains available as a fallback.' 'Loads jobs and markings from this folder. Changes automatically save to <strong>meta.md</strong>.'
 Replace-Once 'are kept in memory until you click <strong>Save now / Retry</strong>' 'are saved automatically, along with cell edits and removals'
-Replace-Once 'return -parsedDate;' 'return (Date.now() - parsedDate) / 86400000;'
 Replace-Once 'link.href = raw;' 'if (/^https?:\/\//i.test(raw)) link.href = raw;'
 # Commit editable cells on input so typing is autosaved without requiring focus loss.
 Replace-Once 'td.addEventListener("blur", () => {' 'td.addEventListener("input", () => { row.data[header] = td.textContent; row.edited = true; queueSave(); }); td.addEventListener("blur", () => { buildFilters(); updateCounts();'
 [IO.File]::WriteAllText($generatedDashboard,$h,[Text.UTF8Encoding]::new($false))
-& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe /out:..\JobScout.exe /resource:dashboard.generated.html,dashboard.html /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll JobScout.cs Importer.cs
+& "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:winexe "/out:$OutputPath" /resource:dashboard.generated.html,dashboard.html /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll JobScout.cs Importer.cs
 if($LASTEXITCODE -ne 0){throw 'Compilation failed'}
 
 } finally {

@@ -59,10 +59,46 @@ partial class JobScout {
       } finally {if(File.Exists(temp))File.Delete(temp);}
       revision=Hash(next);Reply(s,200,"application/json",json.Serialize(new {revision=revision}));return;
      }
+     if(method=="POST"&&path.EndsWith("/api/manual-job")) {
+      if(!headers.ContainsKey("X-Jobs-Token")||headers["X-Jobs-Token"]!=token){Reply(s,403,"text/plain","Invalid token");return;}
+      int length;
+      if(!headers.ContainsKey("Content-Length")||!Int32.TryParse(headers["Content-Length"],out length)||length<1||length>65536){Reply(s,400,"text/plain","Invalid job size");return;}
+      byte[] data=new byte[length];int offset=0;
+      while(offset<length){int n=s.Read(data,offset,length-offset);if(n==0)throw new Exception("Incomplete request");offset+=n;}
+      try {
+       var job=json.Deserialize<JobInfo>(Encoding.UTF8.GetString(data));
+       if(job==null||String.IsNullOrWhiteSpace(job.job_title)||String.IsNullOrWhiteSpace(job.university)) throw new ArgumentException("Job title and university / employer are required.");
+       if(!String.IsNullOrWhiteSpace(job.link)) {
+        Uri link; if(!Uri.TryCreate(job.link,UriKind.Absolute,out link)||(link.Scheme!="https"&&link.Scheme!="http")) throw new ArgumentException("Job link must start with https:// or http://.");
+       }
+       lock(importLock) {
+        if(importRunning){Reply(s,409,"text/plain","An import is running. Wait for it to finish, then save this job.");return;}
+        string current=Read("jobs_raw.md")??"";
+        var keys=ExistingJobKeys(current);
+        string code=GetJobCode(job.link);
+        if(String.IsNullOrWhiteSpace(job.job_id)) job.job_id=String.IsNullOrEmpty(code)?"manual-"+Guid.NewGuid().ToString("N"):code;
+        if(keys.Contains("id:"+job.job_id)||(!String.IsNullOrWhiteSpace(job.link)&&keys.Contains("link:"+job.link))||current.Contains("| "+MdCell(job.job_id)+" |")){
+         Reply(s,409,"text/plain","A job with this ID or link already exists.");return;
+        }
+        job.job_imported_date=DateTime.Today.ToString("yyyy-MM-dd");
+        if(String.IsNullOrWhiteSpace(job.job_alert_name)) job.job_alert_name="Manual";
+        AppendJobsImport(new List<JobInfo>{job});
+       }
+       Reply(s,200,"application/json",json.Serialize(new {added=1}));
+      } catch(ArgumentException e){Reply(s,400,"text/plain",e.Message);}
+      return;
+     }
      if(method=="GET"&&path.EndsWith("/api/import-status")) { Reply(s,200,"application/json",json.Serialize(ImportStatusSnapshot()));return; }
+     if(method=="GET"&&path.EndsWith("/api/import-options")) {
+      Reply(s,200,"application/json",json.Serialize(new {maxJobs=LoadImportConfig().MaxJobs}));return;
+     }
      if(method=="POST"&&path.EndsWith("/api/import")) {
       if(!headers.ContainsKey("X-Jobs-Token")||headers["X-Jobs-Token"]!=token){Reply(s,403,"text/plain","Invalid token");return;}
-      try { Reply(s,200,"application/json",json.Serialize(ImportJobs())); }
+      int requestedJobs;
+      if(!headers.ContainsKey("X-Jobs-Max") || !Int32.TryParse(headers["X-Jobs-Max"],out requestedJobs) || requestedJobs<=0) {
+       Reply(s,400,"text/plain","Enter a whole number from 1 to 2147483647 for the import limit.");return;
+      }
+      try { Reply(s,200,"application/json",json.Serialize(ImportJobs(requestedJobs))); }
       catch(Exception e) { Reply(s,500,"text/plain",e.Message); }
       return;
      }

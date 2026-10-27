@@ -698,30 +698,44 @@
     populateFilter(stateFilter, "Location", "All States");
   }
 
-  function postingAge(value) {
-    const s = String(value || "").trim().toLowerCase();
-
+  function postedDateAgeDays(value) {
+    const s = String(value || "").trim();
     if (!s || s === "—") return Number.POSITIVE_INFINITY;
-    if (s === "today") return 0;
-    if (s === "yesterday") return 1;
 
-    let match = s.match(/(\d+)\s+hour/);
+    const lower = s.toLowerCase();
+    if (lower === "today") return 0;
+    if (lower === "yesterday") return 1;
+
+    let match = lower.match(/(\d+)\s+hour/);
     if (match) return Number(match[1]) / 24;
 
-    match = s.match(/(\d+)\s+day/);
+    match = lower.match(/(\d+)\s+day/);
     if (match) return Number(match[1]);
 
     const parsedDate = Date.parse(s);
-    if (!Number.isNaN(parsedDate)) return -parsedDate;
+    if (Number.isNaN(parsedDate)) return Number.POSITIVE_INFINITY;
 
-    return Number.POSITIVE_INFINITY;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const posted = new Date(parsedDate);
+    posted.setHours(0, 0, 0, 0);
+    const days = Math.floor((today - posted) / 86400000);
+    return days >= 0 ? days : Number.POSITIVE_INFINITY;
+  }
+
+  function displayPostedDate(value) {
+    const days = postedDateAgeDays(value);
+    if (!Number.isFinite(days)) return "—";
+    if (days === 0) return "today";
+    if (days === 1) return "1 day ago";
+    return `${days} days ago`;
   }
 
   function sortValue(row, column) {
     const value = row.data[column] ?? "";
 
-    if (column === "Job Posted Date") {
-      return postingAge(value);
+    if (column === "Job Posted Date" || column === "Job Imported Date") {
+      return postedDateAgeDays(value);
     }
 
     if (column === "No.") {
@@ -964,16 +978,17 @@
 
           td.appendChild(editButton);
         } else {
-          td.contentEditable = "true";
+          td.contentEditable = (header === "Job Posted Date" || header === "Job Imported Date") ? "false" : "true";
           td.spellcheck = false;
-          td.textContent = raw;
+          td.textContent = (header === "Job Posted Date" || header === "Job Imported Date") ? displayPostedDate(raw) : raw;
+          if ((header === "Job Posted Date" || header === "Job Imported Date") && raw !== "—") td.title = `Saved date: ${raw}`;
 
           if (row.edited) {
             td.classList.add("edited");
           }
 
           td.addEventListener("blur", () => {
-            let newValue = td.textContent.trim() || "—";
+            let newValue = (header === "Job Posted Date" || header === "Job Imported Date") ? (row.data[header] ?? "—") : (td.textContent.trim() || "—");
 
             if (header === "Location") {
               newValue = simplifyLocation(newValue);
@@ -1298,11 +1313,95 @@
   syncButton.addEventListener("click", exportMeta);
   exportButton.addEventListener("click", exportMarkdown);
 
+  const manualButton = document.createElement("button");
+  manualButton.textContent = "Add Job Manually";
+  importButton.after(manualButton);
+  const manualDialog = document.createElement("dialog");
+  manualDialog.style.cssText = "width:min(680px,90vw);max-height:85vh;overflow:auto;border:1px solid #ccc;border-radius:12px;padding:24px;color:#172033;background:white;";
+  manualDialog.innerHTML = '<form><h2>Add Job Manually</h2><p>Enter the job details. Job title and university / employer are required. Other fields are optional.</p><div class="manual-fields" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px"></div><p>Job number and date added are filled automatically.</p><p class="manual-error" role="alert" style="color:#b42318"></p><div style="display:flex;gap:12px;justify-content:flex-end"><button type="button" class="manual-cancel">Cancel</button><button type="submit">Save Job</button></div></form>';
+  document.body.append(manualDialog);
+  const manualForm = manualDialog.querySelector("form");
+  const manualError = manualDialog.querySelector(".manual-error");
+  const manualSave = manualForm.querySelector('[type="submit"]');
+  let manualSaving = false;
+  const manualFields = [
+    ["job_title","Job title","text",true],
+    ["university","University / employer","text",true],
+    ["department","Department"],
+    ["fields_for_hiring","Fields for hiring"],
+    ["position_type","Position type"],
+    ["location","Location"],
+    ["job_posted_date","Job posted date","date"],
+    ["application_deadline","Application deadline (date or open until filled)"],
+    ["job_id","Job ID (optional; generated if blank)"],
+    ["link","Job link","url"],
+    ["job_alert_name","Job alert name / source"]
+  ];
+  for (const [name,title,type,required] of manualFields) {
+    const label = document.createElement("label");
+    label.textContent = title + (required ? " *" : "");
+    const input = document.createElement("input");
+    input.name = name; input.type = type || "text"; input.required = !!required;
+    input.maxLength = 2000;
+    input.style.cssText = "display:block;box-sizing:border-box;width:100%;margin-top:5px;padding:9px;border:1px solid #aaa;border-radius:5px";
+    label.append(input);
+    manualDialog.querySelector(".manual-fields").append(label);
+  }
+  manualButton.addEventListener("click", () => {
+    manualError.textContent = "";
+    if (!manualForm.elements.job_alert_name.value) manualForm.elements.job_alert_name.value = "Manual";
+    manualDialog.showModal();
+    manualForm.elements.job_title.focus();
+  });
+  manualDialog.querySelector(".manual-cancel").addEventListener("click", () => { if (!manualSaving) manualDialog.close(); });
+  manualDialog.addEventListener("cancel", event => { if (manualSaving) event.preventDefault(); });
+  manualForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (manualSaving || !manualForm.reportValidity()) return;
+    manualSaving = true; manualSave.disabled = true; manualError.textContent = "";
+    try {
+      if (metaDirty && typeof saveLocal === "function") {
+        await saveLocal();
+        if (metaDirty) throw new Error("Save your dashboard changes before adding this job.");
+      }
+      const job = Object.fromEntries([...new FormData(manualForm)].map(([k,v])=>[k,v.trim()]));
+      const response = await fetch("api/manual-job", {method:"POST",headers:{"Content-Type":"application/json","X-Jobs-Token":appToken},body:JSON.stringify(job)});
+      if (!response.ok) throw new Error(await response.text());
+      manualForm.reset();
+      manualDialog.close();
+      location.reload();
+    } catch (error) {
+      manualError.textContent = error.message || String(error);
+    } finally {
+      manualSaving = false; manualSave.disabled = false;
+    }
+  });
   importButton.addEventListener("click", async () => {
+    importButton.disabled = true;
+    let requestedJobs;
+    try {
+      const optionsResponse = await fetch("api/import-options", { cache: "no-store" });
+      if (!optionsResponse.ok) throw new Error(await optionsResponse.text());
+      const options = await optionsResponse.json();
+      let input = String(options.maxJobs > 0 ? options.maxJobs : 50);
+      while (true) {
+        input = prompt("How many NEW jobs would you like to import? Existing jobs do not count toward this limit.", input);
+        if (input === null) { importButton.disabled = false; return; }
+        input = input.trim();
+        requestedJobs = Number(input);
+        if (/^[0-9]+$/.test(input) && Number.isInteger(requestedJobs) && requestedJobs > 0 && requestedJobs <= 2147483647) break;
+        alert("Please enter a whole number from 1 to 2147483647.");
+      }
+    } catch (error) {
+      appendImportLog("Could not start import: " + (error.message || error));
+      importButton.disabled = false;
+      return;
+    }
     if (metaDirty && typeof saveLocal === "function") {
       await saveLocal();
       if (metaDirty) {
         alert("Import paused because meta.md could not be saved. Use Save now / Retry, then import again.");
+        importButton.disabled = false;
         return;
       }
     }
@@ -1310,7 +1409,7 @@
     importButton.disabled = true;
     importLog.textContent = "";
     importLog.dataset.lastLine = "";
-    appendImportLog("Starting HigherEdJobs import...");
+    appendImportLog(`Starting HigherEdJobs import: up to ${requestedJobs} new jobs...`);
 
     let pollTimer = null;
     const pollStatus = async () => {
@@ -1333,7 +1432,7 @@
       pollTimer = setInterval(pollStatus, 1000);
       const response = await fetch("api/import", {
         method: "POST",
-        headers: { "X-Jobs-Token": appToken }
+        headers: { "X-Jobs-Token": appToken, "X-Jobs-Max": String(requestedJobs) }
       });
 
       if (!response.ok) {
@@ -1344,7 +1443,7 @@
       const failures = result.failures && result.failures.length
         ? " Failed examples: " + result.failures.join("; ")
         : "";
-      appendImportLog(`Import complete: ${result.added} added, ${result.skipped} skipped as duplicates, ${result.failed} failed.${failures} Reloading...`);
+      appendImportLog(`Import complete: ${result.added} added, ${result.skipped} skipped as duplicates, ${result.failed} failed, ${result.deferred || 0} deferred by MaxJobs (${result.scanned || 0} unique jobs scanned).${failures} Reloading...`);
       setTimeout(() => location.reload(), 1200);
     } catch (error) {
       appendImportLog("Import failed: " + (error.message || error));
